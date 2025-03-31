@@ -2,40 +2,114 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>DeepSeek Chatbot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek Chatbot via OpenRouter</title>
     <style>
-        #chatbox { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
-        #userInput { width: 80%; padding: 5px; }
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        #chat-container { max-width: 600px; margin: 0 auto; border: 1px solid #ccc; padding: 15px; background: white; border-radius: 5px; }
+        #chatbox { height: 300px; overflow-y: auto; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        .message { margin: 10px 0; padding: 8px; border-radius: 3px; }
+        .user { background: #007bff; color: white; text-align: right; }
+        .bot { background: #28a745; color: white; }
+        #input-container { display: flex; margin-top: 10px; }
+        #message-input { flex-grow: 1; padding: 5px; font-size: 14px; }
+        #send-btn { padding: 5px 10px; background: #007bff; color: white; border: none; cursor: pointer; }
+        #send-btn:hover { background: #0056b3; }
     </style>
 </head>
 <body>
-    <h2>Chat with DeepSeek</h2>
-    <div id="chatbox"></div>
-    <input type="text" id="userInput" placeholder="Type your message...">
-    <button onclick="sendMessage()">Send</button>
+    <div id="chat-container">
+        <h2>DeepSeek Chatbot</h2>
+        <div id="chatbox"></div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Type a message..." />
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
 
     <script>
-        async function sendMessage() {
-            const userInput = document.getElementById('userInput').value;
-            if (!userInput) return;
+        const API_KEY = "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"; // Replace with your OpenRouter API key
+        const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+        const MODEL = "deepseek/deepseek-r1:free";
 
-            // Display user message
-            const chatbox = document.getElementById('chatbox');
-            chatbox.innerHTML += `<p><strong>You:</strong> ${userInput}</p>`;
-            document.getElementById('userInput').value = '';
+        const chatbox = document.getElementById("chatbox");
+        const messageInput = document.getElementById("message-input");
+        const sendBtn = document.getElementById("send-btn");
 
-            // Call backend or API directly (see Step 2)
-            const response = await fetch('/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userInput })
-            });
-            const data = await response.json();
-
-            // Display bot response
-            chatbox.innerHTML += `<p><strong>Bot:</strong> ${data.reply}</p>`;
-            chatbox.scrollTop = chatbox.scrollHeight; // Auto-scroll to bottom
+        // Add message to chatbox
+        function addMessage(role, content) {
+            const msgDiv = document.createElement("div");
+            msgDiv.classList.add("message", role);
+            msgDiv.textContent = content;
+            chatbox.appendChild(msgDiv);
+            chatbox.scrollTop = chatbox.scrollHeight;
         }
+
+        // Handle API request to OpenRouter
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            addMessage("user", message);
+            messageInput.value = "";
+            sendBtn.disabled = true;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${API_KEY}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: MODEL,
+                        messages: [{"role": "user", "content": message}],
+                        stream: true
+                    })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let botMessage = "";
+
+                addMessage("bot", ""); // Placeholder for streaming response
+                const botMsgDiv = chatbox.lastChild;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split("\n");
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            const data = line.slice(6);
+                            if (data === "[DONE]") continue;
+                            try {
+                                const parsed = JSON.parse(data);
+                                const content = parsed.choices[0].delta.content;
+                                if (content) {
+                                    botMessage += content;
+                                    botMsgDiv.textContent = botMessage;
+                                    chatbox.scrollTop = chatbox.scrollHeight;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (error) {
+                addMessage("bot", "Error: Could not connect to DeepSeek API.");
+                console.error(error);
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        // Event listeners
+        sendBtn.addEventListener("click", sendMessage);
+        messageInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") sendMessage();
+        });
     </script>
 </body>
 </html>
